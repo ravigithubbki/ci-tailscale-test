@@ -24,25 +24,42 @@ jobs:
             --state=/var/lib/tailscale/tailscaled.state \
             --socket=/var/run/tailscale/tailscaled.sock \
             > /tmp/tailscaled.log 2>&1 &
-          sleep 3
+
+          echo "Waiting for tailscaled socket to be ready..."
+          for i in $(seq 1 30); do
+            if tailscale --socket=/var/run/tailscale/tailscaled.sock status > /dev/null 2>&1; then
+              echo "tailscaled is up."
+              break
+            fi
+            sleep 1
+          done
+          echo "----- tailscaled.log -----"
           cat /tmp/tailscaled.log
 
       - name: tailscale up -> print login URL in logs
         run: |
+          rm -f /tmp/ts-login.log
           tailscale up \
             --socket=/var/run/tailscale/tailscaled.sock \
             --hostname=gh-ci-alpine \
-            --accept-dns=false 2>&1 | tee /tmp/ts-login.log &
-          # login URL aane tak thoda wait, phir print
-          for i in $(seq 1 15); do
+            > /tmp/ts-login.log 2>&1 &
+
+          echo "Waiting for login URL..."
+          for i in $(seq 1 30); do
             if grep -q "https://login.tailscale.com" /tmp/ts-login.log 2>/dev/null; then
               break
             fi
             sleep 2
           done
+
           echo "=================================================="
-          echo " OPEN THIS URL ON YOUR OTHER DEVICE TO LOGIN:"
-          grep "https://login.tailscale.com" /tmp/ts-login.log || cat /tmp/ts-login.log
+          if grep -q "https://login.tailscale.com" /tmp/ts-login.log; then
+            echo " OPEN THIS URL ON YOUR OTHER DEVICE TO LOGIN:"
+            grep "https://login.tailscale.com" /tmp/ts-login.log
+          else
+            echo " No login URL found. Full output below (this is the real error):"
+            cat /tmp/ts-login.log
+          fi
           echo "=================================================="
 
       - name: Wait for manual login to complete
