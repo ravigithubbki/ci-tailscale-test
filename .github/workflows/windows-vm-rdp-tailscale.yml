@@ -9,6 +9,12 @@ jobs:
     timeout-minutes: 360        # GitHub-hosted runner ki hard cap (6h)
 
     steps:
+      - name: Disable console QuickEdit mode (prevents accidental clicks pausing steps)
+        shell: powershell
+        run: |
+          if (!(Test-Path 'HKCU:\Console')) { New-Item -Path 'HKCU:\Console' -Force | Out-Null }
+          Set-ItemProperty -Path 'HKCU:\Console' -Name QuickEdit -Value 0 -Type DWord
+
       - name: Install Tailscale
         shell: powershell
         run: |
@@ -74,4 +80,14 @@ jobs:
       - name: Keep alive for remote testing
         shell: powershell
         run: |
+          # Apni console window ko minimize kar do taaki RDP desktop pe visible/clickable na rahe
+          Add-Type -Name Window -Namespace Console -MemberDefinition '
+            [DllImport("Kernel32.dll")]
+            public static extern IntPtr GetConsoleWindow();
+            [DllImport("user32.dll")]
+            public static extern bool ShowWindow(IntPtr hWnd, Int32 nCmdShow);
+          '
+          $consolePtr = [Console.Window]::GetConsoleWindow()
+          [Console.Window]::ShowWindow($consolePtr, 6) | Out-Null   # 6 = SW_MINIMIZE
+
           Start-Sleep -Seconds 20700   # ~345 min, 360 min job cap me se buffer nikal ke
