@@ -36,37 +36,22 @@ jobs:
           echo "----- tailscaled.log -----"
           cat /tmp/tailscaled.log
 
-      - name: tailscale up -> print login URL in logs
+      - name: tailscale up (authkey, no manual login needed) + enable Tailscale SSH
         run: |
-          rm -f /tmp/ts-login.log
-          tailscale up \
-            --socket=/var/run/tailscale/tailscaled.sock \
+          tailscale --socket=/var/run/tailscale/tailscaled.sock up \
+            --authkey=${{ secrets.TS_AUTHKEY }} \
             --hostname=gh-ci-alpine \
-            > /tmp/ts-login.log 2>&1 &
-
-          echo "Waiting for login URL..."
-          for i in $(seq 1 30); do
-            if grep -q "https://login.tailscale.com" /tmp/ts-login.log 2>/dev/null; then
-              break
-            fi
-            sleep 2
-          done
-
+            --ssh
           echo "=================================================="
-          if grep -q "https://login.tailscale.com" /tmp/ts-login.log; then
-            echo " OPEN THIS URL ON YOUR OTHER DEVICE TO LOGIN:"
-            grep "https://login.tailscale.com" /tmp/ts-login.log
-          else
-            echo " No login URL found. Full output below (this is the real error):"
-            cat /tmp/ts-login.log
-          fi
+          echo " Connected. SSH into this runner from any tailnet device:"
+          echo "   ssh root@gh-ci-alpine"
           echo "=================================================="
 
       - name: Wait for manual login to complete
         run: |
           echo "Waiting up to 5 min for you to approve login..."
           for i in $(seq 1 30); do
-            STATUS=$(tailscale status --socket=/var/run/tailscale/tailscaled.sock 2>&1 || true)
+            STATUS=$(tailscale --socket=/var/run/tailscale/tailscaled.sock status 2>&1 || true)
             echo "--- check $i ---"
             echo "$STATUS"
             if echo "$STATUS" | grep -qE "100\.[0-9]+\.[0-9]+\.[0-9]+"; then
@@ -78,7 +63,7 @@ jobs:
 
       - name: Show assigned tailscale IP
         run: |
-          tailscale ip --socket=/var/run/tailscale/tailscaled.sock -4 || echo "Not connected yet"
+          tailscale --socket=/var/run/tailscale/tailscaled.sock ip -4 || echo "Not connected yet"
 
       - name: Setup nginx test page
         run: |
