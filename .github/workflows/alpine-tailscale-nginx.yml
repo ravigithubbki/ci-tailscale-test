@@ -1,0 +1,84 @@
+name: Alpine Tailscale + Nginx Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ts-nginx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360         # GitHub-hosted runners ki hard cap yehi hai (6h) — isse zyada set karo to bhi effect nahi
+    container:
+      image: alpine:latest
+
+    steps:
+      - name: Install tailscale + nginx
+        run: |
+          apk update
+          apk add --no-cache tailscale nginx curl bash iptables ip6tables
+
+      - name: Start tailscaled (userspace networking, no TUN device needed)
+        run: |
+          mkdir -p /var/run/tailscale /var/lib/tailscale
+          tailscaled \
+            --tun=userspace-networking \
+            --state=/var/lib/tailscale/tailscaled.state \
+            --socket=/var/run/tailscale/tailscaled.sock \
+            > /tmp/tailscaled.log 2>&1 &
+          sleep 3
+          cat /tmp/tailscaled.log
+
+      - name: tailscale up -> print login URL in logs
+        run: |
+          tailscale up \
+            --socket=/var/run/tailscale/tailscaled.sock \
+            --hostname=gh-ci-alpine \
+            --accept-dns=false 2>&1 | tee /tmp/ts-login.log &
+          # login URL aane tak thoda wait, phir print
+          for i in $(seq 1 15); do
+            if grep -q "https://login.tailscale.com" /tmp/ts-login.log 2>/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          echo "=================================================="
+          echo " OPEN THIS URL ON YOUR OTHER DEVICE TO LOGIN:"
+          grep "https://login.tailscale.com" /tmp/ts-login.log || cat /tmp/ts-login.log
+          echo "=================================================="
+
+      - name: Wait for manual login to complete
+        run: |
+          echo "Waiting up to 5 min for you to approve login..."
+          for i in $(seq 1 30); do
+            STATUS=$(tailscale status --socket=/var/run/tailscale/tailscaled.sock 2>&1 || true)
+            echo "--- check $i ---"
+            echo "$STATUS"
+            if echo "$STATUS" | grep -qE "100\.[0-9]+\.[0-9]+\.[0-9]+"; then
+              echo ">>> Connected to tailnet."
+              break
+            fi
+            sleep 10
+          done
+
+      - name: Show assigned tailscale IP
+        run: |
+          tailscale ip --socket=/var/run/tailscale/tailscaled.sock -4 || echo "Not connected yet"
+
+      - name: Setup nginx test page
+        run: |
+          mkdir -p /usr/share/nginx/html
+          cat > /usr/share/nginx/html/index.html << 'EOF'
+          <html><body><h1>Alpine + Tailscale GitHub Runner - nginx OK</h1></body></html>
+          EOF
+          nginx -t
+          nginx
+
+      - name: Local nginx test
+        run: |
+          sleep 2
+          curl -s http://127.0.0.1 || echo "nginx not responding on localhost"
+
+      - name: Keep alive for remote testing
+        run: |
+          echo "Runner tailscale IP se accessible rahega jab tak timeout na ho."
+          echo "Apne tailnet device se: curl http://<gh-ci-alpine-tailscale-ip>"
+          sleep 20700   # ~345 min, 360 min job cap me se pehle steps ka buffer nikal ke
