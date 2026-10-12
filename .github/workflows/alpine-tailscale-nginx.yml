@@ -1,4 +1,4 @@
-name: Alpine Tailscale + Nginx Test
+name: ubuntu Tailscale + Nginx Test
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360         # GitHub-hosted runners ki hard cap yehi hai (6h) — isse zyada set karo to bhi effect nahi
     container:
-      image: alpine:latest
+      image: ubuntu/mysql:8.4-26.04
 
     steps:
       - name: Install tailscale + nginx
